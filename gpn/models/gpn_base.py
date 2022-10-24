@@ -1,16 +1,15 @@
 from typing import Dict, Tuple, List
-from gpn.utils.config import ModelConfiguration
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-import torch_geometric.utils as tu
 from torch_geometric.data import Data
+
 from gpn.nn import uce_loss, entropy_reg
 from gpn.layers import APPNPPropagation, LinearSequentialLayer
+from gpn.utils.config import ModelConfiguration
 from gpn.utils import apply_mask
 from gpn.utils import Prediction, ModelConfiguration
-from gpn.layers import Density, Evidence, ConnectedComponents
+from gpn.layers import Density, Evidence, ConnectedComponents, utils
 from .model import Model
 
 
@@ -22,7 +21,6 @@ class GPN(Model):
 
         if self.params.num_layers is None:
             num_layers = 0
-
         else:
             num_layers = self.params.num_layers
 
@@ -41,7 +39,7 @@ class GPN(Model):
                 nn.Dropout(p=self.params.dropout_prob))
 
         self.latent_encoder = nn.Linear(self.params.dim_hidden, self.params.dim_latent)
-
+        
         use_batched = True if self.params.use_batched_flow else False 
         self.flow = Density(
             dim_latent=self.params.dim_latent,
@@ -52,7 +50,6 @@ class GPN(Model):
             use_batched_flow=use_batched)
 
         self.evidence = Evidence(scale=self.params.alpha_evidence_scale)
-
         self.propagation = APPNPPropagation(
             K=self.params.K,
             alpha=self.params.alpha_teleport,
@@ -60,6 +57,7 @@ class GPN(Model):
             cached=False,
             normalization='sym')
 
+        self.dist_reg = utils.LapEigDist(normalize = self.params.normalize_dist_reg, KNN_K = self.params.KNN_K, sigma = self.params.dist_sigma)
         assert self.params.pre_train_mode in ('encoder', 'flow', None)
         assert self.params.likelihood_type in ('UCE', 'nll_train', 'nll_train_and_val', 'nll_consistency', None)
 
@@ -68,9 +66,14 @@ class GPN(Model):
 
     def forward_impl(self, data: Data) -> Prediction:
         edge_index = data.edge_index if data.edge_index is not None else data.adj_t
+
         h = self.input_encoder(data.x)
         z = self.latent_encoder(h)
 
+        # Goal here is to ensure that z is embedded such that the embedding preserves distances, 
+        # to that end we construct a KNN matrix generate L, and then generate the regularization term.
+        lap_eig_dist = self.dist_reg(data.x, z)
+        
         # compute feature evidence (with Normalizing Flows)
         # log p(z, c) = log p(z | c) p(c)
         p_c = self.get_class_probalities(data)
@@ -81,9 +84,7 @@ class GPN(Model):
         else:
             further_scale = 1.0
 
-        beta_ft = self.evidence(
-            log_q_ft_per_class, dim=self.params.dim_latent,
-            further_scale=further_scale).exp()
+        beta_ft = self.evidence(log_q_ft_per_class, dim=self.params.dim_latent, further_scale=further_scale).exp()
 
         alpha_features = 1.0 + beta_ft
 
@@ -103,6 +104,8 @@ class GPN(Model):
             soft=soft,
             log_soft=log_soft,
             hard=hard,
+
+            lap_eig_dist = lap_eig_dist,
 
             logits=logits,
             latent=z,
@@ -166,14 +169,17 @@ class GPN(Model):
 
     def uce_loss(self, prediction: Prediction, data: Data, approximate=True) -> Tuple[torch.Tensor, torch.Tensor]:
         alpha_train, y = apply_mask(data, prediction.alpha, split='train')
-        reg = self.params.entropy_reg
+        import pdb
+        pdb.set_trace()
         return uce_loss(alpha_train, y, reduction='sum'), \
-            entropy_reg(alpha_train, reg, approximate=approximate, reduction='sum')
+            entropy_reg(alpha_train, self.params.entropy_reg, approximate=approximate, reduction='sum'), \
+            prediction.lap_eig_dist.sum() * self.params.latent_dist_reg
 
     def loss(self, prediction: Prediction, data: Data) -> Dict[str, torch.Tensor]:
-        uce, reg = self.uce_loss(prediction, data)
+        uce, reg, reg_dist = self.uce_loss(prediction, data)
         n_train = data.train_mask.sum() if self.params.loss_reduction == 'mean' else 1
-        return {'UCE': uce / n_train, 'REG': reg / n_train}
+        # return {'UCE': uce / n_train, 'REG': reg / n_train}
+        return {'UCE': uce / n_train, 'REG': reg / n_train, 'DIST_REG': reg_dist / n_train}
 
     def warmup_loss(self, prediction: Prediction, data: Data) -> Dict[str, torch.Tensor]:
         if self.params.pre_train_mode == 'encoder':

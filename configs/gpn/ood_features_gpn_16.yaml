@@ -39,7 +39,7 @@ model:
   seed: 42
   
   # change this to a get a different random model initialization (init_no > 0)
-  init_no: 1
+  init_no: 2
   
   model_name: GPN
   dim_hidden: 64

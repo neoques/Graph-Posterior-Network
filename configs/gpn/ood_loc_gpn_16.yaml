@@ -36,7 +36,7 @@ model:
   seed: 42
   
   # change this to a get a different random model initialization (init_no > 0)
-  init_no: 1
+  init_no: 2
   
   model_name: GPN
   dim_hidden: 64
@@ -53,12 +53,16 @@ model:
   alpha_evidence_scale: latent-new
   alpha_teleport: 0.1
   entropy_reg: 0.0001
+  latent_dist_reg: 0.0000005
+  KNN_K: 10
+  normalize_dist_reg: True
+  dist_sigma: .1
   dim_latent: 16
   radial_layers: 10
 
 
 training:
-  epochs: 100000
+  epochs: 300
   stopping_mode: default
   stopping_patience: 50
   stopping_restore_best: true
