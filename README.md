@@ -1,6 +1,6 @@
 # Graph Posterior Network
 
-This is the official code repository to the paper
+This is NOT the official code repository to the paper
 
 [Graph Posterior Network: Bayesian Predictive Uncertainty for Node Classification](https://arxiv.org/pdf/2110.14012.pdf)<br>
 Maximilian Stadler, Bertrand Charpentier, Simon Geisler, Daniel Zügner, Stephan Günnemann<br>
