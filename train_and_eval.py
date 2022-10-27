@@ -37,7 +37,7 @@ def run_experiment(run: dict, data: dict, model: dict, training: dict) -> dict:
     Returns:
         dict: numerical results of the evaluation metrics for different splits
     """
-
+    os.chdir("/home/rah150030/Graph-Posterior-Network")
     run_cfg = RunConfiguration(**run)
     data_cfg = DataConfiguration(**data)
     model_cfg = ModelConfiguration(**model)

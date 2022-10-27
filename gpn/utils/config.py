@@ -141,6 +141,7 @@ class ModelConfiguration(HalfFrozenObject):
     latent_dist_reg: float = attr.ib(default=None)
     normalize_dist_reg: bool = attr.ib(default=None)
     dist_sigma: float = attr.ib(default=None)
+    dist_embedding_beta: bool = attr.ib(default=None)
     KNN_K: int = attr.ib(default=None)
     factor_flow_lr: float = attr.ib(default=None)
     flow_weight_decay: float = attr.ib(default=None)

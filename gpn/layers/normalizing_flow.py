@@ -154,7 +154,7 @@ class BatchedNormalizingFlowDensity(nn.Module):
 
         self.mean = nn.Parameter(torch.zeros(self.c, self.dim), requires_grad=False)
         self.cov = nn.Parameter(torch.eye(self.dim).repeat(self.c, 1, 1), requires_grad=False)
-
+        self.dist = None
         if self.flow_type == 'radial_flow':
             self.transforms = nn.Sequential(*(
                 Radial(c, dim) for _ in range(flow_length)
@@ -175,10 +175,25 @@ class BatchedNormalizingFlowDensity(nn.Module):
         return z, sum_log_jacobians
 
     def log_prob(self, x):
+
+        # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
         z, sum_log_jacobians = self.forward(x)
-        log_prob_z = tdist.MultivariateNormal(
-            self.mean.repeat(z.size(1), 1, 1).permute(1, 0, 2),
-            self.cov.repeat(z.size(1), 1, 1, 1).permute(1, 0, 2, 3)
-        ).log_prob(z)
+
+        # from torch.profiler import profile, record_function, ProfilerActivity
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
+        #     with record_function("model_inference"):
+        if self.dist is None:
+            self.dist = tdist.MultivariateNormal(
+                self.mean.repeat(z.size(1), 1, 1).permute(1, 0, 2),
+                self.cov.repeat(z.size(1), 1, 1, 1).permute(1, 0, 2, 3)
+            )
+
+        log_prob_z = self.dist.log_prob(z)
+        # print(prof.key_averages(group_by_stack_n=5).table(sort_by="self_cuda_time_total", row_limit=2))
+        # import pdb
+        # pdb.set_trace()
+
         log_prob_x = log_prob_z + sum_log_jacobians  # [batch_size]
+
+
         return log_prob_x

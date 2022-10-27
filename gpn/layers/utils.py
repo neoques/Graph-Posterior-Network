@@ -389,7 +389,7 @@ class ConnectedComponents(MessagePassing):
 
 class LapEigDist(MessagePassing):
     def __init__(self, KNN_K=50, normalize=True, sigma=.0001):
-        super().__init__(aggr='sum')
+        super().__init__(aggr='add')
         self.edge_indexs = None
         self.edge_weights = None
         self.KNN_K = KNN_K
@@ -401,17 +401,13 @@ class LapEigDist(MessagePassing):
         if self.edge_indexs is None:
             n = x.size(dim=-2)
             cosine_similarity_matrix = 1 - pairwise_cosine_similarity(x.clone(), x.clone(), zero_diagonal=True)
-            distances = torch.exp(-cosine_similarity_matrix)/self.sigma
+            distances = torch.exp(-cosine_similarity_matrix/self.sigma).nan_to_num()
             _, ind_outer = torch.topk(distances, self.KNN_K)
             ind_inner = torch.outer(torch.arange(n), torch.ones(self.KNN_K))
             flat_ind_outer = ind_outer.flatten()
             flat_ind_inner = ind_inner.flatten().to(flat_ind_outer)
-            inds1 = torch.stack([flat_ind_inner, flat_ind_outer])
-            inds2 = torch.stack([flat_ind_outer, flat_ind_inner])
-            edge_indexs = torch.concat([inds1, inds2], axis=-1)
-            self.edge_indexs = torch.unique(edge_indexs, dim=-1)
-            self.edge_weights = distances[self.edge_indexs[0], self.edge_indexs[1]]
-
+            self.edge_indexs = torch.stack([flat_ind_inner, flat_ind_outer])
+            self.edge_weights = (distances[self.edge_indexs[0], self.edge_indexs[1]] + distances[self.edge_indexs[1], self.edge_indexs[0]])/2
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
         return self.propagate(self.edge_indexs, x=proj_x, edge_weight=self.edge_weights)
@@ -419,6 +415,4 @@ class LapEigDist(MessagePassing):
     def message(self, x_i, x_j, edge_weight):
         # x_i has shape [E, in_channels]
         # x_j has shape [E, in_channels]
-        # import pdb
-        # pdb.set_trace()
         return torch.mul(edge_weight, (x_i-x_j).norm(p=2, dim=-1).square()).view(-1, 1)

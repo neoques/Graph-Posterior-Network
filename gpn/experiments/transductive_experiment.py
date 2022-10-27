@@ -216,7 +216,6 @@ class TransductiveExperiment:
         if warmup_epochs > 0:
             # set-up optimizer
             optimizer = self.model.get_warmup_optimizer(self.train_cfg.lr, self.train_cfg.weight_decay)
-
             self.engine.model.set_warming_up(True)
             _ = self.engine.train(
                 train_data=self.dataset.warmup_loader,
@@ -298,7 +297,7 @@ class TransductiveExperiment:
         # save trained model
         # or potential values to be cached
         # e.g. alpha_prior of y_soft
-        if self.run_cfg.save_model:
-            self.model.save_to_storage()
+        # if self.run_cfg.save_model:
+        #     self.model.save_to_storage()
 
         return results

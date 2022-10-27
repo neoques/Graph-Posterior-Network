@@ -72,11 +72,12 @@ class GPN(Model):
 
         # Goal here is to ensure that z is embedded such that the embedding preserves distances, 
         # to that end we construct a KNN matrix generate L, and then generate the regularization term.
-        lap_eig_dist = self.dist_reg(data.x, z)
-        
+
         # compute feature evidence (with Normalizing Flows)
         # log p(z, c) = log p(z | c) p(c)
+
         p_c = self.get_class_probalities(data)
+            
         log_q_ft_per_class = self.flow(z) + p_c.view(1, -1).log()
 
         if '-plus-classes' in self.params.alpha_evidence_scale:
@@ -87,6 +88,11 @@ class GPN(Model):
         beta_ft = self.evidence(log_q_ft_per_class, dim=self.params.dim_latent, further_scale=further_scale).exp()
 
         alpha_features = 1.0 + beta_ft
+        
+        if self.params.dist_embedding_beta:
+            lap_eig_dist = self.dist_reg(data.x, alpha_features)
+        else:
+            lap_eig_dist = self.dist_reg(data.x, z)
 
         beta = self.propagation(beta_ft, edge_index)
         alpha = 1.0 + beta
@@ -169,8 +175,8 @@ class GPN(Model):
 
     def uce_loss(self, prediction: Prediction, data: Data, approximate=True) -> Tuple[torch.Tensor, torch.Tensor]:
         alpha_train, y = apply_mask(data, prediction.alpha, split='train')
-        import pdb
-        pdb.set_trace()
+        # import pdb
+        # pdb.set_trace()
         return uce_loss(alpha_train, y, reduction='sum'), \
             entropy_reg(alpha_train, self.params.entropy_reg, approximate=approximate, reduction='sum'), \
             prediction.lap_eig_dist.sum() * self.params.latent_dist_reg

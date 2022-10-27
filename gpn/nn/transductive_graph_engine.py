@@ -149,7 +149,7 @@ class TransductiveGraphEngine(Engine):
             except CallbackException as e:
                 exception = e
                 break
-
+            
         # 3) Finish training
         # 3.1) If GPU used
         if gpu is not None:
@@ -288,7 +288,7 @@ class TransductiveGraphEngine(Engine):
 
         else:
             loss_train = loss(y_hat, data)
-
+        
         loss = 0.0
         loss_dict = {}
         for l_key, l_val in loss_train.items():
