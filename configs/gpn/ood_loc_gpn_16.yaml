@@ -53,7 +53,7 @@ model:
   alpha_evidence_scale: latent-new
   alpha_teleport: 0.1
   entropy_reg: 0.0001
-  latent_dist_reg: 0.0000005
+  dist_reg: 0.0000005
   KNN_K: 10
   normalize_dist_reg: True
   dist_sigma: .1

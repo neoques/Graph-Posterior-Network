@@ -58,6 +58,7 @@ class GPN(Model):
             normalization='sym')
 
         self.dist_reg = utils.LapEigDist(normalize = self.params.normalize_dist_reg, KNN_K = self.params.KNN_K, sigma = self.params.dist_sigma)
+        self.orig_dist_reg = utils.OrigLapEigDist()
         assert self.params.pre_train_mode in ('encoder', 'flow', None)
         assert self.params.likelihood_type in ('UCE', 'nll_train', 'nll_train_and_val', 'nll_consistency', None)
 
@@ -90,8 +91,10 @@ class GPN(Model):
         alpha_features = 1.0 + beta_ft
         
         if self.params.dist_embedding_beta:
+            orig_lap_eig_dist = self.orig_dist_reg(alpha_features, edge_index)
             lap_eig_dist = self.dist_reg(data.x, alpha_features)
         else:
+            orig_lap_eig_dist = self.orig_dist_reg(z, edge_index)
             lap_eig_dist = self.dist_reg(data.x, z)
 
         beta = self.propagation(beta_ft, edge_index)
@@ -110,7 +113,8 @@ class GPN(Model):
             soft=soft,
             log_soft=log_soft,
             hard=hard,
-
+            
+            orig_lap_eig_dist = orig_lap_eig_dist,
             lap_eig_dist = lap_eig_dist,
 
             logits=logits,
@@ -179,13 +183,14 @@ class GPN(Model):
         # pdb.set_trace()
         return uce_loss(alpha_train, y, reduction='sum'), \
             entropy_reg(alpha_train, self.params.entropy_reg, approximate=approximate, reduction='sum'), \
-            prediction.lap_eig_dist.sum() * self.params.latent_dist_reg
+            prediction.lap_eig_dist.sum() * self.params.dist_reg, \
+            prediction.orig_lap_eig_dist.sum() * self.params.orig_dist_reg
 
     def loss(self, prediction: Prediction, data: Data) -> Dict[str, torch.Tensor]:
-        uce, reg, reg_dist = self.uce_loss(prediction, data)
+        uce, reg, dist_reg, orig_dist_reg = self.uce_loss(prediction, data)
         n_train = data.train_mask.sum() if self.params.loss_reduction == 'mean' else 1
         # return {'UCE': uce / n_train, 'REG': reg / n_train}
-        return {'UCE': uce / n_train, 'REG': reg / n_train, 'DIST_REG': reg_dist / n_train}
+        return {'UCE': uce / n_train, 'REG': reg / n_train, 'DIST_REG': dist_reg / n_train, 'ORIG_DIST_REG': orig_dist_reg / n_train}
 
     def warmup_loss(self, prediction: Prediction, data: Data) -> Dict[str, torch.Tensor]:
         if self.params.pre_train_mode == 'encoder':

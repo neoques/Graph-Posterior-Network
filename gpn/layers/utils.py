@@ -387,6 +387,21 @@ class ConnectedComponents(MessagePassing):
         return aggr_out
 
 
+class OrigLapEigDist(MessagePassing):
+    def __init__(self):
+        super().__init__(aggr='add')
+
+    def forward(self, proj_x, edge_indexs):
+        # x has shape [N, in_channels]
+        # edge_index has shape [2, E]
+        return self.propagate(x=proj_x, edge_index = edge_indexs, edge_weight=torch.ones([edge_indexs.shape[0], 1]))
+
+    def message(self, x_i, x_j, edge_weight):
+        # x_i has shape [E, in_channels]
+        # x_j has shape [E, in_channels]
+        return (x_i-x_j).norm(p=2, dim=-1).square().view(-1, 1)
+
+
 class LapEigDist(MessagePassing):
     def __init__(self, KNN_K=50, normalize=True, sigma=.0001):
         super().__init__(aggr='add')
@@ -397,7 +412,6 @@ class LapEigDist(MessagePassing):
         self.sigma=sigma
 
     def forward(self, x, proj_x):
-        # Create edge index given x
         if self.edge_indexs is None:
             n = x.size(dim=-2)
             cosine_similarity_matrix = 1 - pairwise_cosine_similarity(x.clone(), x.clone(), zero_diagonal=True)

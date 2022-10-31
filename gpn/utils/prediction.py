@@ -31,6 +31,7 @@ class Prediction(HalfFrozenObject):
     hidden: torch.Tensor = attr.ib(default=None)
     hidden_features: torch.Tensor = attr.ib(default=None)
     lap_eig_dist: torch.Tensor = attr.ib(default=None)
+    orig_lap_eig_dist: torch.Tensor = attr.ib(default=None)
     
     # ensembles
     var_predicted: torch.Tensor = attr.ib(default=None)

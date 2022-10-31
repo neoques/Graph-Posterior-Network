@@ -70,7 +70,7 @@ def brier_score(y_hat: Tensor, y: Tensor) -> Tensor:
         Tensor: Brier Score
     """
     batch_size = y_hat.size(0)
-    if batch_size == 0:
+    if batch_size <= 0:
         return torch.as_tensor(float('nan'))
     prob = y_hat.clone()
     indices = torch.arange(batch_size)
