@@ -5,8 +5,7 @@ import torch.nn as nn
 from torch import Tensor
 import torch_geometric.utils as tu
 from torch_geometric.typing import Adj
-from torch_geometric.nn import MessagePassing
-from torch_geometric.nn import knn_graph
+from torch_geometric.nn import MessagePassing, knn_graph
 from torch_scatter import scatter_add
 from torch_sparse import SparseTensor, fill_diag, mul, sum
 from torch.nn import Sequential as Seq, Linear, ReLU
@@ -424,13 +423,11 @@ class LapEigDist(MessagePassing):
             inner, outer, weight = scipy.sparse.find(adj)
             inner = torch.Tensor(inner).to(torch.long).to(torch.device('cuda'))
             outer = torch.Tensor(outer).to(torch.long).to(torch.device('cuda'))
-            cosine_similarity_vector = 1 - torch.nn.CosineSimilarity()(features[inner], features[outer])
-            
-            self.edge_indexs = torch.stack([inner, outer])
+            cosine_similarity_vector = 1 - torch.nn.CosineSimilarity()(features[self.edge_indexs[0]], features[self.edge_indexs[1]])
             self.edge_weights = torch.exp(-cosine_similarity_vector/self.sigma).nan_to_num() 
-            # import pdb
-            # pdb.set_trace()
             
+            self.edge_indexs, self.edge_weights = tu.to_undirected(torch.stack([inner, outer]), self.edge_weights)
+
             # self.edge_indexs = knn_graph(x = x, k = self.KNN_K, batch=None, cosine=True)
             # distances = 1 - torch.nn.CosineSimilarity(x[self.edge_indexs[:, 0]], x[self.edge_indexs[:, 1]], dim=0)
             # self.edge_weights = torch.exp(-distances/self.sigma).nan_to_num()    
