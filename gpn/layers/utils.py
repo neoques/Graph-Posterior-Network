@@ -422,7 +422,7 @@ class LapEigDist(MessagePassing):
             # self.edge_indexs = knn_graph(x = x, k = self.KNN_K, batch=None, cosine=True)
             # distances = 1 - torch.nn.CosineSimilarity(x[self.edge_indexs[:, 0]], x[self.edge_indexs[:, 1]], dim=0)
             # self.edge_weights = torch.exp(-distances/self.sigma).nan_to_num()    
-            if x.shape[0] > 10000:
+            if x.shape[0] < 10000:
                 cosine_similarity_matrix = 1 - pairwise_cosine_similarity(x.clone(), x.clone(), zero_diagonal=True)
                 distances = torch.exp(-cosine_similarity_matrix/self.sigma).nan_to_num()    
                 _, ind_outer = torch.topk(distances, self.KNN_K)

@@ -23,7 +23,7 @@ data:
   train_samples_per_class: 0.05
   val_samples_per_class: 0.15
   test_samples_per_class: 0.8
-  split: random
+  split: public
   ood_setting: poisoning
   ood_type: leave_out_classes
   ood_num_left_out_classes: -1

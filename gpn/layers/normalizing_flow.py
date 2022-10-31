@@ -185,7 +185,7 @@ class BatchedNormalizingFlowDensity(nn.Module):
         if self.dist is None:
             self.dist = tdist.MultivariateNormal(
                 self.mean.repeat(z.size(1), 1, 1).permute(1, 0, 2),
-                self.cov.repeat(z.size(1), 1, 1, 1).permute(1, 0, 2, 3)
+                scale_tril=self.cov.repeat(z.size(1), 1, 1, 1).permute(1, 0, 2, 3)
             )
 
         log_prob_z = self.dist.log_prob(z)
