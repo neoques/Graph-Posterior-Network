@@ -54,6 +54,7 @@ model:
   alpha_teleport: 0.1
   entropy_reg: 0.0001
   dist_reg: 0.0000005
+  orig_dist_reg: 0.00005
   KNN_K: 10
   normalize_dist_reg: True
   dist_sigma: .1

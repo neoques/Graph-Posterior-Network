@@ -114,7 +114,7 @@ class GPN(Model):
             log_soft=log_soft,
             hard=hard,
             
-            orig_lap_eig_dist = orig_lap_eig_dist,
+            orig_dist_reg = orig_lap_eig_dist,
             lap_eig_dist = lap_eig_dist,
 
             logits=logits,
@@ -179,12 +179,10 @@ class GPN(Model):
 
     def uce_loss(self, prediction: Prediction, data: Data, approximate=True) -> Tuple[torch.Tensor, torch.Tensor]:
         alpha_train, y = apply_mask(data, prediction.alpha, split='train')
-        # import pdb
-        # pdb.set_trace()
         return uce_loss(alpha_train, y, reduction='sum'), \
             entropy_reg(alpha_train, self.params.entropy_reg, approximate=approximate, reduction='sum'), \
             prediction.lap_eig_dist.sum() * self.params.dist_reg, \
-            prediction.orig_lap_eig_dist.sum() * self.params.orig_dist_reg
+            prediction.orig_dist_reg.sum() * self.params.orig_dist_reg
 
     def loss(self, prediction: Prediction, data: Data) -> Dict[str, torch.Tensor]:
         uce, reg, dist_reg, orig_dist_reg = self.uce_loss(prediction, data)

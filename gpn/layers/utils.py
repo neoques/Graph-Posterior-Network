@@ -1,3 +1,4 @@
+from re import T
 from typing import Optional, List, Any
 import torch
 import torch.nn as nn
@@ -5,11 +6,12 @@ from torch import Tensor
 import torch_geometric.utils as tu
 from torch_geometric.typing import Adj
 from torch_geometric.nn import MessagePassing
+from torch_geometric.nn import knn_graph
 from torch_scatter import scatter_add
 from torch_sparse import SparseTensor, fill_diag, mul, sum
 from torch.nn import Sequential as Seq, Linear, ReLU
 from torchmetrics.functional import pairwise_cosine_similarity
-
+import tqdm
 
 def propagation_wrapper(
         propagation: callable, x: Tensor, edge_index: Adj,
@@ -414,14 +416,41 @@ class LapEigDist(MessagePassing):
     def forward(self, x, proj_x):
         if self.edge_indexs is None:
             n = x.size(dim=-2)
-            cosine_similarity_matrix = 1 - pairwise_cosine_similarity(x.clone(), x.clone(), zero_diagonal=True)
-            distances = torch.exp(-cosine_similarity_matrix/self.sigma).nan_to_num()
-            _, ind_outer = torch.topk(distances, self.KNN_K)
-            ind_inner = torch.outer(torch.arange(n), torch.ones(self.KNN_K))
-            flat_ind_outer = ind_outer.flatten()
-            flat_ind_inner = ind_inner.flatten().to(flat_ind_outer)
-            self.edge_indexs = torch.stack([flat_ind_inner, flat_ind_outer])
-            self.edge_weights = (distances[self.edge_indexs[0], self.edge_indexs[1]] + distances[self.edge_indexs[1], self.edge_indexs[0]])/2
+            # import pdb
+            # pdb.set_trace()
+
+            # self.edge_indexs = knn_graph(x = x, k = self.KNN_K, batch=None, cosine=True)
+            # distances = 1 - torch.nn.CosineSimilarity(x[self.edge_indexs[:, 0]], x[self.edge_indexs[:, 1]], dim=0)
+            # self.edge_weights = torch.exp(-distances/self.sigma).nan_to_num()    
+            if x.shape[0] > 10000:
+                cosine_similarity_matrix = 1 - pairwise_cosine_similarity(x.clone(), x.clone(), zero_diagonal=True)
+                distances = torch.exp(-cosine_similarity_matrix/self.sigma).nan_to_num()    
+                _, ind_outer = torch.topk(distances, self.KNN_K)
+                ind_inner = torch.outer(torch.arange(n), torch.ones(self.KNN_K))
+                flat_ind_outer = ind_outer.flatten()
+                flat_ind_inner = ind_inner.flatten().to(flat_ind_outer)
+                self.edge_indexs = torch.stack([flat_ind_inner, flat_ind_outer])
+                self.edge_weights = (distances[self.edge_indexs[0], self.edge_indexs[1]] + distances[self.edge_indexs[1], self.edge_indexs[0]])/2
+            else:
+                flat_ind_inner_list = []
+                flat_ind_outer_list = []
+                dist_list = []
+                features = x.clone()
+                for i in range(x.shape[0]):
+                    cosine_similarity_vector = 1 - pairwise_cosine_similarity(features[i:i+1], features, zero_diagonal=True)
+                    distances = torch.exp(-cosine_similarity_vector/self.sigma).nan_to_num()   
+                    _, ind_outer = torch.topk(distances, self.KNN_K)
+
+                    dist_list.extend(distances[0, ind_outer.flatten()])
+                    ind_outer = ind_outer[0]
+                    ind_inner = i * torch.ones_like(ind_outer).to(ind_outer)
+                    flat_ind_outer_list.append(ind_outer)
+                    flat_ind_inner_list.append(ind_inner)            
+                flat_ind_inner = torch.concat(flat_ind_inner_list)
+                flat_ind_outer = torch.concat(flat_ind_outer_list)
+                self.edge_indexs = torch.stack([flat_ind_inner, flat_ind_outer]).to(torch.device('cuda'))
+                self.edge_weights = torch.Tensor(dist_list).to(torch.device('cuda'))
+
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
         return self.propagate(self.edge_indexs, x=proj_x, edge_weight=self.edge_weights)
