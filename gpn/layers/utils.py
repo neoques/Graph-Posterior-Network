@@ -419,17 +419,18 @@ class LapEigDist(MessagePassing):
         if self.edge_indexs is None:
             n = x.size(dim=-2)
             features = x.clone()
+
+            adj = kneighbors_graph(features.cpu().numpy(), self.KNN_K, metric='cosine')
+            inner, outer, weight = scipy.sparse.find(adj)
+            inner = torch.Tensor(inner).to(torch.long).to(torch.device('cuda'))
+            outer = torch.Tensor(outer).to(torch.long).to(torch.device('cuda'))
+            cosine_similarity_vector = 1 - torch.nn.CosineSimilarity()(features[inner], features[outer])
+            
+            self.edge_indexs = torch.stack([inner, outer])
+            self.edge_weights = torch.exp(-cosine_similarity_vector/self.sigma).nan_to_num() 
             # import pdb
             # pdb.set_trace()
             
-            adj = kneighbors_graph(features.cpu().numpy(), self.KNN_K, metric='cosine')
-            inner, outer, weight = scipy.sparse.find(adj)
-            inner = torch.Tensor(inner).to(torch.device('cuda'))
-            outer = torch.Tensor(outer).to(torch.device('cuda'))
-            self.edge_indexs = torch.stack([inner, outer])
-            self.edge_weights = torch.Tensor(weight).to(torch.device('cuda'))
-            # import pdb
-            # pdb.set_trace()
             # self.edge_indexs = knn_graph(x = x, k = self.KNN_K, batch=None, cosine=True)
             # distances = 1 - torch.nn.CosineSimilarity(x[self.edge_indexs[:, 0]], x[self.edge_indexs[:, 1]], dim=0)
             # self.edge_weights = torch.exp(-distances/self.sigma).nan_to_num()    
