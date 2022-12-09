@@ -19,6 +19,10 @@ class TransductiveGraphEngine(Engine):
         super().__init__(model)
         self.splits = splits
         self.current_it = 0
+        self.vecs = {}
+        self.vecs2 = {}
+        self.vecs_ood = {}
+
 
     ##################################################################################
 
@@ -149,7 +153,7 @@ class TransductiveGraphEngine(Engine):
             except CallbackException as e:
                 exception = e
                 break
-            
+
         # 3) Finish training
         # 3.1) If GPU used
         if gpu is not None:
@@ -324,14 +328,26 @@ class TransductiveGraphEngine(Engine):
     ################################################################################
     ### UTILITY FUNCTIONS
     ################################################################################
+    def _aggregate_y(self, y, vecs):
+        if y.size() in vecs:
+            dif = (y - vecs[y.size()]).sum()
+            if dif.detach().cpu().numpy() != 0:
+                raise ValueError
+            return vecs[y.size()]
+        else:
+            vecs[y.size()] = y
+            return y
+    
     def _aggregate_metrics(self, evals, metrics):
         metric_results = {}
         for s in self.splits:
             y_hat, y = evals[s]
-            metric_results[s] = {
-                metric_key: self._process_metric(metric(y_hat, y))
-                for metric_key, metric in metrics.items()
-            }
+            print(s)
+            y = self._aggregate_y(y, self.vecs)
+            tmp_dict = {}
+            for metric_key, metric in metrics.items():
+                tmp_dict[metric_key] = self._process_metric(metric(y_hat, y))
+            metric_results[s] = tmp_dict
 
         return metric_results
 
@@ -340,6 +356,8 @@ class TransductiveGraphEngine(Engine):
         for s in self.splits:
             y_hat, y = evals[s]
             y_hat_ood, y_ood = evals_ood[s]
+            y = self._aggregate_y(y, self.vecs2)
+            y_ood = self._aggregate_y(y_ood, self.vecs_ood)
 
             metric_results[s] = {
                 metric_key: self._process_metric(metric(y_hat, y, y_hat_ood, y_ood))
@@ -352,7 +370,7 @@ class TransductiveGraphEngine(Engine):
 
         if callbacks is None:
             callbacks = []
-
+            
         # setup
         num_predictions = len(data)
         self._exec_callbacks(callbacks, 'before_predictions', self.model, num_predictions)

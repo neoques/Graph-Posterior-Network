@@ -11,6 +11,7 @@ def LinearSequentialLayer(
         k_lipschitz: Optional[float] = None,
         num_layers: Optional[int] = None,
         activation_in_all_layers=False,
+        activation_type='relu',
         **_) -> nn.Module:
     """creates a chain of combined linear and activation layers depending on specifications"""
 
@@ -35,7 +36,7 @@ def LinearSequentialLayer(
         if activation_in_all_layers or (i < num_layers - 1):
             if batch_norm:
                 layers.append(nn.BatchNorm1d(dims[i + 1]))
-            layers.append(nn.ReLU())
+            layers.append(getattr(nn, activation_type)())
 
             if dropout_prob is not None:
                 layers.append(nn.Dropout(p=dropout_prob))

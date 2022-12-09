@@ -9,7 +9,8 @@ from .metrics import ood_detection_features
 from .metrics import ood_detection_structure
 from .metrics import ood_detection_neighborhood
 from .metrics import average_confidence, average_entropy
-from .loss import cross_entropy
+from .loss import cross_entropy, mse_p
+
 
 
 def get_metrics(metrics):
@@ -73,6 +74,10 @@ def get_metric(metric: str):
     if metric == 'ce':
         return 'CE', lambda y_hat, y: _metric_wrapper(
             cross_entropy, y_hat, y, key='soft')
+
+    if metric == 'mpe':
+        return 'MPE', lambda y_hat, y: _metric_wrapper(
+            mse_p, y_hat, y, key='soft')
 
     if metric == 'confidence_aleatoric_auroc':
         return metric, lambda y_hat, y: _metric_wrapper(

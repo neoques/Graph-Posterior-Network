@@ -1,3 +1,7 @@
+import random
+import pdb
+import itertools
+from functools import partial
 from re import T
 from typing import Optional, List, Any
 import torch
@@ -12,7 +16,12 @@ from torch.nn import Sequential as Seq, Linear, ReLU
 from torchmetrics.functional import pairwise_cosine_similarity
 import tqdm
 from sklearn.neighbors import kneighbors_graph
+import sklearn.manifold
 import scipy.sparse
+import numpy as np
+from sklearn.utils.graph_shortest_path import graph_shortest_path
+import scipy.sparse as sp
+import networkx as nx
 
 def propagation_wrapper(
         propagation: callable, x: Tensor, edge_index: Adj,
@@ -390,82 +399,330 @@ class ConnectedComponents(MessagePassing):
         return aggr_out
 
 
-class OrigLapEigDist(MessagePassing):
-    def __init__(self):
+def l1_dist(x_i, x_j):
+    return (x_i-x_j).norm(p=1, dim=-1).view(-1, 1)
+    
+
+def l2_dist(x_i, x_j):
+    return (x_i-x_j).norm(p=2, dim=-1).square().view(-1, 1)
+    
+    
+def kl_divergence(x_i, x_j, dist):     
+    x_i = dist(x_i)
+    x_j = dist(x_j)
+    return torch.distributions.kl.kl_divergence(x_i, x_j).view(-1, 1) + torch.distributions.kl.kl_divergence(x_j, x_i).view(-1, 1)
+        
+def to_scipy(x):
+    return scipy.sparse.csr_array(x.detach().cpu().numpy())
+        
+class GraphDistance(MessagePassing):
+    def __init__(self, distance_fun = 'l2', save_to_orig=True):
         super().__init__(aggr='add')
+        self.orig_dists = None
+        self.save_to_orig=save_to_orig
+        self.scale_factor = nn.Parameter(torch.Tensor(1, 1))
+        nn.init.constant_(self.scale_factor, 0.4)
+        # pdb.set_trace()
+        if distance_fun == 'l2':
+            self.distance_fun = l2_dist
+        elif distance_fun == 'l1':
+            self.distance_fun = l1_dist
+        elif distance_fun == 'dirichlet':
+            self.distance_fun = partial(kl_divergence, dist = torch.distributions.dirichlet.Dirichlet)
+        else: 
+            raise NotImplementedError
+
+    def first_forward(self, x, edge_indexs):
+        if self.save_to_orig:
+            self.propagate(x=x, edge_index = edge_indexs, edge_weight=torch.ones([edge_indexs.shape[0], 1]))
 
     def forward(self, proj_x, edge_indexs):
         # x has shape [N, in_channels]
         # edge_index has shape [2, E]
-        return self.propagate(x=proj_x, edge_index = edge_indexs, edge_weight=torch.ones([edge_indexs.shape[0], 1]))
+        dists = []
+        if len(proj_x.shape) == 3:
+            for i in range(proj_x.shape[0]): 
+                dists.append(self.propagate(x=proj_x[i, ...], edge_index = edge_indexs, edge_weight=torch.ones([edge_indexs.shape[0], 1])))
+            return torch.sum(torch.stack(dists), dim=0)
+        else:
+            return self.propagate(x=proj_x, edge_index = edge_indexs, edge_weight=torch.ones([edge_indexs.shape[0], 1]))
 
     def message(self, x_i, x_j, edge_weight):
         # x_i has shape [E, in_channels]
-        # x_j has shape [E, in_channels]
-        return (x_i-x_j).norm(p=2, dim=-1).square().view(-1, 1)
+        # x_j has shape [E, in_channels]   
+        
+        if self.save_to_orig:
+            self.orig_dists = (to_scipy(x_i) * to_scipy(x_j)).sum(axis=1)[:, np.newaxis]
+            self.orig_dists = torch.Tensor(self.orig_dists).to(device='cuda')
+            self.save_to_orig=False
+            return self.orig_dists
+        else:
+            if self.orig_dists is not None:
+                return ((self.distance_fun(x_i, x_j) - self.scale_factor * self.orig_dists).abs() + 1e-8).sqrt()
+            else:
+                return self.distance_fun(x_i, x_j)
 
+class KNN_Distance(MessagePassing):
+    def __init__(self, save_to_orig=False, KNN_K=50, sigma=.0001, distance_fun='l2', mode='knn'):
 
-class LapEigDist(MessagePassing):
-    def __init__(self, KNN_K=50, normalize=True, sigma=.0001):
         super().__init__(aggr='add')
         self.edge_indexs = None
         self.edge_weights = None
         self.KNN_K = KNN_K
-        self.normalize=normalize
-        self.sigma=sigma
-
-    def forward(self, x, proj_x):
-        if self.edge_indexs is None:
+        self.sigma = sigma
+        self.save_to_orig = save_to_orig
+        self.orig_dists = None
+        
+        if save_to_orig:
+            self.scale_factor = nn.Parameter(torch.Tensor(1, 1))
+            nn.init.constant_(self.scale_factor, 0.4)
+        
+        if mode == 'random':
+            assert save_to_orig 
+            self.mode = 'random'
+        elif mode == 'knn' or mode is None:
+            self.mode = 'knn'
+        else:
+            raise NotImplementedError
+            
+        if distance_fun == 'l2':
+            self.distance_fun = l2_dist
+        elif distance_fun == 'l1':
+            self.distance_fun = l1_dist
+        elif distance_fun == 'dirichlet':
+            self.distance_fun = partial(kl_divergence, dist = torch.distributions.dirichlet.Dirichlet)
+        else: 
+            raise NotImplementedError
+    
+    def first_forward(self, x):
+        if self.mode == 'random':
+            a = torch.arange(x.shape[0])
+            b = torch.randint(0, x.shape[0], [x.shape[0]*self.KNN_K])
+            self.edge_indexs = torch.stack([a.repeat_interleave(self.KNN_K), b])
+            self.edge_weights = torch.ones(self.edge_indexs.shape[1])
+        elif self.mode == 'knn':
             features = x.clone()
-
             adj = kneighbors_graph(features.cpu().numpy(), self.KNN_K, metric='cosine')
             inner, outer, weight = scipy.sparse.find(adj)
             inner = torch.Tensor(inner).to(torch.long).to(torch.device('cuda'))
             outer = torch.Tensor(outer).to(torch.long).to(torch.device('cuda'))
 
             self.edge_indexs = torch.stack([inner, outer])
-            cosine_similarity_vector = 1 - torch.nn.CosineSimilarity()(features[self.edge_indexs[0]], features[self.edge_indexs[1]])
-            self.edge_weights = torch.exp(-cosine_similarity_vector/self.sigma).nan_to_num() 
+            cosine_distance = 1 - torch.nn.CosineSimilarity()(features[self.edge_indexs[0]], features[self.edge_indexs[1]])
+            self.edge_weights = torch.exp(-cosine_distance/self.sigma).nan_to_num() 
             
-            self.edge_indexs, self.edge_weights = tu.to_undirected(self.edge_indexs, self.edge_weights)
+        self.edge_indexs, self.edge_weights = tu.to_undirected(self.edge_indexs, self.edge_weights)
+        self.edge_indexs, self.edge_weights = self.edge_indexs.to(torch.device('cuda')), self.edge_weights.to(torch.device('cuda'))
+        if self.save_to_orig:
+            self.forward(x.to(torch.device('cuda')))
 
-            # self.edge_indexs = knn_graph(x = x, k = self.KNN_K, batch=None, cosine=True)
-            # distances = 1 - torch.nn.CosineSimilarity(x[self.edge_indexs[:, 0]], x[self.edge_indexs[:, 1]], dim=0)
-            # self.edge_weights = torch.exp(-distances/self.sigma).nan_to_num()    
-            # if x.shape[0] < 10000:
-            #     cosine_similarity_matrix = 1 - pairwise_cosine_similarity(features, features, zero_diagonal=True)
-            #     distances = torch.exp(-cosine_similarity_matrix/self.sigma).nan_to_num()    
-            #     _, ind_outer = torch.topk(distances, self.KNN_K)
-            #     ind_inner = torch.outer(torch.arange(n), torch.ones(self.KNN_K))
-            #     flat_ind_outer = ind_outer.flatten()
-            #     flat_ind_inner = ind_inner.flatten().to(flat_ind_outer)
-            #     self.edge_indexs = torch.stack([flat_ind_inner, flat_ind_outer])
-            #     self.edge_weights = (distances[self.edge_indexs[0], self.edge_indexs[1]] + distances[self.edge_indexs[1], self.edge_indexs[0]])/2
-            # else:
-            #     flat_ind_inner_list = []
-            #     flat_ind_outer_list = []
-            #     dist_list = []
-                
-            #     for i in range(x.shape[0]):
-            #         cosine_similarity_vector = 1 - pairwise_cosine_similarity(features[i:i+1], features, zero_diagonal=True)
-            #         distances = torch.exp(-cosine_similarity_vector/self.sigma).nan_to_num()   
-            #         _, ind_outer = torch.topk(distances, self.KNN_K)
-
-            #         dist_list.extend(distances[0, ind_outer.flatten()])
-            #         ind_outer = ind_outer[0]
-            #         ind_inner = i * torch.ones_like(ind_outer).to(ind_outer)
-            #         flat_ind_outer_list.append(ind_outer)
-            #         flat_ind_inner_list.append(ind_inner)            
-            #     flat_ind_inner = torch.concat(flat_ind_inner_list)
-            #     flat_ind_outer = torch.concat(flat_ind_outer_list)
-            #     self.edge_indexs = torch.stack([flat_ind_inner, flat_ind_outer]).to(torch.device('cuda'))
-            #     self.edge_weights = torch.Tensor(dist_list).to(torch.device('cuda'))
-
-        # x has shape [N, in_channels]
-        # edge_index has shape [2, E]
-        return self.propagate(self.edge_indexs, x=proj_x, edge_weight=self.edge_weights)
+    def forward(self, proj_x):
+        dists = []
+        if len(proj_x.shape) == 3:
+            for i in range(proj_x.shape[0]): 
+                return self.propagate(self.edge_indexs, x=proj_x[i, ...], edge_weight=self.edge_weights)
+            return torch.sum(torch.stack(dists), dim=0)
+        else:
+            return self.propagate(self.edge_indexs, x=proj_x, edge_weight=self.edge_weights)
 
     def message(self, x_i, x_j, edge_weight):
         # x_i has shape [E, in_channels]
         # x_j has shape [E, in_channels]
-        return torch.mul(edge_weight, (x_i-x_j).norm(p=2, dim=-1).square()).view(-1, 1)
+        if self.save_to_orig:
+            self.orig_dists = (to_scipy(x_i) * to_scipy(x_j)).sum(axis=1)[:, np.newaxis]
+            self.orig_dists = torch.Tensor(self.orig_dists).to(device='cuda')
+            self.save_to_orig=False
+            return self.orig_dists
+        else:
+            if self.orig_dists is not None:
+                return ((self.distance_fun(x_i, x_j) - self.scale_factor * self.orig_dists).abs() + 1e-8).sqrt()
+            else:
+                return self.distance_fun(x_i, x_j)
+
+class Stress(nn.Module):
+    def __init__(self, *, metric, use_graph, knn_k, scaling, row_normalize, drop_orthog, drop_last, sym_single_dists, force_connected) -> None:
+        super(Stress, self).__init__()
+        self.dists = None
+
+        self.use_graph = use_graph
+        self.metric_str = metric
+        if metric == 'cosine':
+            metric = lambda x: 1 - torch.nn.CosineSimilarity()(*x)
+        else:
+            raise NotImplementedError
+        self.metric = metric
+        self.knn_k = knn_k
+        self.scaling = scaling
+        self.row_normalize = row_normalize
+        self.drop_orthog = drop_orthog
+        self.drop_last = drop_last
+        self.sym_single_dists = sym_single_dists
+        self.force_connected = force_connected
+        self.removed = None
+        
+    def generate_projection(self, geo_dist, k=3):
+        e, u = sp.linalg.eigs(geo_dist, k=5)
+        print(u.shape)
+        u = u[:, 1:]
+        print(e)
+        return u.real
+    
+    @staticmethod
+    def remove_disconnected(sp_mat):
+        G = nx.DiGraph()
+        row, col, val = sp.find(sp_mat)
+        G.add_weighted_edges_from([(u, v, w) for u, v, w in zip(row, col, val)])   
+        G_largest_component = max(nx.strongly_connected_components(G), key=len)
+        removed = np.sort(list(set(G.nodes) - set(G_largest_component)))
+        G = G.subgraph(G_largest_component)
+        
+        return nx.to_scipy_sparse_matrix(G), removed
+        
+    @staticmethod
+    def force_strongly_connected(sp_mat, do_random):
+        G = nx.from_scipy_sparse_matrix(sp_mat, create_using=nx.DiGraph)
+        G_components = list(nx.strongly_connected_components(G))
+        
+        central_nodes = []
+        for a_comp in G_components:
+            sub_G = G.subgraph(a_comp)
+            central_nodes.append(max(sub_G.degree, key=lambda x: x[1])[0])
+        comp_cnt = len(central_nodes)
+        
+        if comp_cnt == 1:
+            return sp_mat
+        
+        if do_random:
+            for i, u in enumerate(central_nodes):
+                active = set(range(comp_cnt)) - set([i])
+                # pdb.set_trace()
+                for j_C in np.random.choice(list(active), size=5):
+                    G.add_edge(u, random.choice(list(G_components[j_C])), weight=1)
+                    G.add_edge(random.choice(list(G_components[j_C])), u, weight=1)
+        else:
+            for u, v in itertools.product(central_nodes, central_nodes):
+                if (u,v) not in G.edges:
+                    G.add_edge(u, v, weight=1)
+                if (v, u) not in G.edges:
+                    G.add_edge(v, u, weight=1)
+        return nx.to_scipy_sparse_matrix(G) 
+    
+    @staticmethod
+    def remove_orthogonal_edges(sp_mat):
+        rows, cols, edge_vals = sp.find(sp_mat)
+        G = nx.from_scipy_sparse_matrix(sp_mat, create_using=nx.DiGraph)
+
+        while np.max(edge_vals) > .99:
+            ind = np.argmax(edge_vals)
+            G.remove_edge(rows[ind], cols[ind])
+            if not nx.is_strongly_connected(G):
+                G.add_edge(rows[ind], cols[ind], weight=edge_vals[ind])
+            rows = np.delete(rows, ind)
+            cols = np.delete(cols, ind)
+            edge_vals = np.delete(edge_vals, ind) 
+        return nx.to_scipy_sparse_matrix(G)            
+    
+    def do_scaling(self, dists):
+        if self.scaling == 'log':
+            dists.data = np.log(1 + dists.data) + .1
+        elif self.scaling == 'sqrt':
+            dists.data = np.sqrt(dists.data)
+        elif self.scaling == 'square':
+            dists.data = np.square(dists.data)
+        elif self.scaling == 'linear':
+            dists.data = np.abs(dists.data)
+        elif self.scaling == 'constant':
+            dists.data = np.ones_like(dists.data)
+        elif self.scaling == 'kernel':
+            dists.data = np.exp(-dists.data)
+        elif self.scaling == 'forced-linear':
+            dists.data[np.argsort(dists.data)] = np.linspace(0.01, 1, dists.data.size)
+        else:
+            raise ValueError
+        return dists
+    
+    def drop_farthest_edges(self, single_dists):
+        rows, cols, edge_vals = sp.find(single_dists)
+        G = nx.Graph()
+        G.add_weighted_edges_from([(u, v, w) for u, v, w in zip(rows, cols, edge_vals)])    
+        for _ in range(self.drop_last):
+            bridges = list(nx.bridges(G))
+            ind = -1
+            while (ind == -1) or (tuple(sorted([rows[ind], cols[ind]])) in bridges):
+                if ind != -1:
+                    rows = np.delete(rows, ind)
+                    cols = np.delete(cols, ind)
+                    edge_vals = np.delete(edge_vals, ind)
+                ind = np.argmax(edge_vals)
+            G.remove_edge(*sorted([int(rows[ind]), int(cols[ind])]))
+            
+            rows = np.delete(rows, ind)
+            cols = np.delete(cols, ind)
+            edge_vals = np.delete(edge_vals, ind) 
+                            
+        return nx.to_scipy_sparse_matrix(G)
+
+    @staticmethod
+    def do_row_normalize(sp_mat):
+        sp_mat.data = sp_mat.data - 2
+        rows, cols, edge_vals = sp.find(sp_mat)
+        hot_dists = sp.coo_matrix((np.ones_like(edge_vals),(rows, cols)), shape=sp_mat.shape)
+        min_row = sp_mat.min(axis=1)
+        sp_mat.data = sp_mat.data + 2
+        min_row.data = min_row.data + 2
+        min_dists = hot_dists.multiply(min_row)
+        sp_mat = sp_mat - min_dists
+        sp_mat.data = sp_mat.data + .01
+        return sp_mat
+
+    def init_helper(self, features: Tensor, edge_list) -> Tensor:
+        N = features.shape[0]
+        if self.use_graph:
+            edge_list = edge_list.cpu().numpy()
+            rows, cols = edge_list
+        else:
+            adj = kneighbors_graph(features.cpu().numpy(), self.knn_k, metric=self.metric_str)
+            rows, cols = adj.nonzero()
+        
+        edge_vals = self.metric([features[rows, :], features[cols, :]]).cpu().numpy()
+        single_dists = sp.coo_matrix((edge_vals, (rows, cols)), shape=(N, N))
+        
+        if 'true' in self.force_connected.casefold():
+            if 'random' in self.force_connected.casefold():
+                gen_random_connections = True
+            elif 'fully' in self.force_connected.casefold():
+                gen_random_connections = False
+            else:
+                raise NotImplementedError
+            single_dists = self.force_strongly_connected(single_dists, gen_random_connections)
+        elif 'false' in self.force_connected.casefold():
+            pass
+        elif 'remove' in self.force_connected.casefold():
+            single_dists, self.removed = self.remove_disconnected(single_dists)
+        else:
+            raise ValueError
+            
+        if self.drop_orthog:
+            single_dists = self.remove_orthogonal_edges(single_dists)
+
+        if self.drop_last:
+            single_dists = self.drop_farthest_edges(single_dists)
+
+        if self.row_normalize:
+            single_dists = self.do_row_normalize(single_dists)
+        
+        if self.scaling is not None:
+            single_dists = self.do_scaling(single_dists)
+
+        if self.sym_single_dists:
+            single_dists = single_dists.T + single_dists
+            
+        geo_dist = graph_shortest_path(single_dists, directed=False)
+        v = self.generate_projection(geo_dist, k=3)
+        self.dists = torch.Tensor(geo_dist).to(device='cuda')
+        return v
+        
+    def forward(self, features: Tensor) -> Tensor:
+        # We partially sum it here, we finish the summation later (to appease the formating requirements for nodes being fed in)
+        dists = (self.dists - torch.cdist(features, features)).abs()
+        return dists.sum(-1, keepdim=True)

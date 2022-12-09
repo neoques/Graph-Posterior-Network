@@ -39,7 +39,7 @@ model:
   seed: 42
   
   # change this to a get a different random model initialization (init_no > 0)
-  init_no: 2
+  init_no: 1
   
   model_name: GPN
   dim_hidden: 64
@@ -58,6 +58,14 @@ model:
   entropy_reg: 0.0001
   dim_latent: 16
   radial_layers: 10
+  dist_sigma: 5
+  activation_type: 'ReLU'
+  lipschitz_reg: 0.000
+  lipschitz_init: 100000.0
+  dist_reg: 0.0000
+  orig_dist_reg: 0.0000
+  KNN_K: 5
+  dist_embedding_beta: 'preflow-l2'
 
 
 training:

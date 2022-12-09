@@ -51,6 +51,14 @@ model:
   entropy_reg: 1.0e-05
   dim_latent: 10
   radial_layers: 10
+  activation_type: 'ReLU'
+  dist_sigma: 5
+  lipschitz_reg: 0.000
+  lipschitz_init: 100000.0
+  dist_reg: 0.0000
+  orig_dist_reg: 1.0000
+  KNN_K: 5
+  dist_embedding_beta: 'preflow-l2'
 
 
 training:

@@ -48,10 +48,44 @@ model:
   pre_train_mode: flow
   alpha_evidence_scale: latent-new
   alpha_teleport: 0.1
-  entropy_reg: 0.0001
+  entropy_reg: 0.00001 
   dim_latent: 16
   radial_layers: 10
+  activation_type: 'ReLU'
 
+  lipschitz_reg: 0.000
+  lipschitz_init: 100000.0
+
+  stress_reg: 0.00
+  stress_use_graph: false
+  stress_metric: 'cosine'
+  stress_knn_k: 5
+  stress_scaling: 'linear'
+  stress_row_normalize: false
+  stress_drop_last_N: 0
+  stress_drop_orthog: false
+  stress_sym_single_dists: false
+  stress_force_connected: 'true-random'
+
+  # fixed_point_loss: 1.0
+  decoder_reg: 0.01
+  # LDA_loss: 1.0
+  # nll_loss: 1.0
+  uce_loss: 1.0
+  # mse_loss: 1.0
+  # mae_loss: 1.0
+  # entropy_reg: 0.00001
+
+  dist_perserving: False
+  dist_embedding_beta: 'dirichlet-evidence'
+  # dist_embedding_beta: 'preflow-l2'
+
+  # orig_dist_reg: 0.0001
+  # dist_reg: 0.00000001
+  dist_sigma: 5
+  KNN_K: 5
+  knn_mode: 'knn'
+  save_tsne: true
 
 training:
   epochs: 100000

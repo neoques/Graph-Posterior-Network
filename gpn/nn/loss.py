@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch.distributions as D
 import gpn.distributions as UD
 from gpn.utils import to_one_hot
+import pdb
 
 
 def loss_reduce(
@@ -49,11 +50,65 @@ def uce_loss(
 
     if alpha.dim() == 1:
         alpha = alpha.view(1, -1)
-
+        
     a_sum = alpha.sum(-1)
     a_true = alpha.gather(-1, y.view(-1, 1)).squeeze(-1)
     uce = a_sum.digamma() - a_true.digamma() 
     return loss_reduce(uce, reduction=reduction)
+
+
+def loss_helper(
+        alpha: torch.Tensor,
+        y: torch.Tensor,
+        func,
+        reduction: str = 'sum') -> torch.Tensor:
+    a_sum = alpha.sum(-1)
+    a_true = alpha.gather(-1, y.view(-1, 1)).squeeze(-1)
+    diff = (func(a_sum) - func(a_true))
+    return loss_reduce(diff, reduction=reduction)
+
+
+def mse_p(
+        alpha: torch.Tensor,
+        y: torch.Tensor,
+        reduction: str = 'sum') -> torch.Tensor:
+    """utility function computing uncertainty cross entropy /
+    bayesian risk of cross entropy
+
+    Args:
+        alpha (torch.Tensor): parameters of Dirichlet distribution
+        y (torch.Tensor): ground-truth class labels (not one-hot encoded)
+        reduction (str, optional): reduction method ('sum' | 'mean' | 'none').
+            Defaults to 'sum'.
+
+    Returns:
+        torch.Tensor: loss
+    """
+    # return loss_helper(alpha, y, lambda x: torch.pow(abs(x), .1), reduction)
+    return loss_helper(alpha, y, lambda x: torch.log(torch.log(1+1e-16+x)), reduction)
+
+
+def mae_b(
+        alpha: torch.Tensor,
+        y: torch.Tensor,
+        reduction: str = 'sum') -> torch.Tensor:
+    """utility function computing uncertainty cross entropy /
+    bayesian risk of cross entropy
+
+    Args:
+        alpha (torch.Tensor): parameters of Dirichlet distribution
+        y (torch.Tensor): ground-truth class labels (not one-hot encoded)
+        reduction (str, optional): reduction method ('sum' | 'mean' | 'none').
+            Defaults to 'sum'.
+
+    Returns:
+        torch.Tensor: loss
+    """
+    
+    a_sum = alpha.sum(-1)
+    a_true = alpha.gather(-1, y.view(-1, 1)).squeeze(-1)
+    diff = abs(a_sum - a_true) 
+    return loss_reduce(diff, reduction=reduction)
 
 
 def entropy_reg(

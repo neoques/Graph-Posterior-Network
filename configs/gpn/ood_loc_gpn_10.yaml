@@ -55,6 +55,33 @@ model:
   entropy_reg: 1.0e-05
   dim_latent: 10
   radial_layers: 10
+  activation_type: 'ReLU'
+  
+  lipschitz_reg: 0.000
+  lipschitz_init: 100000.0
+
+  stress_reg: 0.00
+  stress_use_graph: True
+  stress_metric: 'cosine'
+  stress_knn_k: 5
+  stress_scaling: 'linear'
+  stress_row_normalize: False
+  stress_drop_last_N: 0
+  stress_drop_orthog: False
+  stress_sym_single_dists: False
+  stress_force_connected: 'true-random'
+
+  dist_perserving: False
+  dist_embedding_beta: 'dirichlet-evidence'
+
+  orig_dist_reg: 0.0000
+
+  dist_reg: 0.0
+  dist_sigma: 5
+  KNN_K: 5
+  knn_mode: 'knn'
+  
+  save_tsne: false
 
 
 training:

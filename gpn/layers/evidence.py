@@ -153,7 +153,7 @@ class Density(nn.Module):
     def forward(self, z: Tensor) -> Tensor:
         # produces log p(z|c)
         if self.use_batched_flow:
-            log_q_c = self.forward_batched(z)
+            log_q_c, embeddings = self.forward_batched(z)
 
         elif self.use_flow:
             log_q_c = self.forward_flow(z)
@@ -166,10 +166,11 @@ class Density(nn.Module):
             # normalizing flow "diverging". We force these values to minus infinity.
             log_q_c[torch.isnan(log_q_c)] = float('-inf')
 
-        return log_q_c
+        return log_q_c, embeddings
 
     def forward_batched(self, z: Tensor) -> Tensor:
-        return self.flow.log_prob(z).transpose(0, 1)
+        probs, embeddings = self.flow.log_prob(z)
+        return probs.transpose(0, 1), embeddings
 
     def forward_flow(self, z: Tensor) -> Tensor:
         n_nodes = z.size(0)

@@ -51,6 +51,7 @@ class TransductiveExperiment:
             'confidence_epistemic_auroc',
             'confidence_structure_auroc',
             'ce',
+            'mpe',
             'avg_prediction_confidence_aleatoric',
             'avg_prediction_confidence_epistemic',
             'avg_sample_confidence_aleatoric',
@@ -216,6 +217,7 @@ class TransductiveExperiment:
         if warmup_epochs > 0:
             # set-up optimizer
             optimizer = self.model.get_warmup_optimizer(self.train_cfg.lr, self.train_cfg.weight_decay)
+
             self.engine.model.set_warming_up(True)
             _ = self.engine.train(
                 train_data=self.dataset.warmup_loader,
@@ -227,8 +229,7 @@ class TransductiveExperiment:
                 eval_every=1, eval_train=True,
                 callbacks=warmup_callbacks,
                 metrics=metrics,
-                gpu=self.run_cfg.gpu
-            )
+                gpu=self.run_cfg.gpu)
 
             self.engine.model.set_warming_up(False)
 
@@ -241,7 +242,7 @@ class TransductiveExperiment:
         if isinstance(optimizer, (tuple, list)):
             likelihood_optimizer = optimizer[1]
             optimizer = optimizer[0]
-
+            
         # default training
         history = self.engine.train(
             train_data=self.dataset.train_loader,
@@ -278,10 +279,16 @@ class TransductiveExperiment:
                 gpu=self.run_cfg.gpu)
             self.engine.model.set_finetuning(False)
 
+        self.model.to(device)
+        self.model.make_tsne(self.dataset.train_loader._get_iterator().next())
+        self.model.to('cpu')
+        
         self.dataset.train_dataset.to('cpu')
         self.dataset.train_val_dataset.to('cpu')
         self.dataset.warmup_dataset.to('cpu')
         self.dataset.finetune_dataset.to('cpu')
+
+
 
         return history
 

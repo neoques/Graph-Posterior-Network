@@ -147,14 +147,23 @@ def apply_mask(data: Data, y_hat: Union[dict, Tensor, Prediction], split: str,
         # not intended as mask
         # for not breaking pipeline: empty mask
         mask = torch.zeros_like(data.y, dtype=bool)
+        
+    elif split == 'not_train':
+        # not intended as mask
+        # for not breaking pipeline: empty mask
+        mask = data.val_mask + data.test_mask
+
 
     else:
         raise NotImplementedError(f'split {split} is not implemented!')
-
+    
     _y_hat = _apply_mask(y_hat, mask)
-
+    
     if return_target:
-        return _y_hat, data.y[mask]
+        masked_labels1 = data.y[mask]
+        masked_labels2 = torch.index_select(data.y, 0, mask.nonzero().flatten())
+        assert torch.all(masked_labels2 >= 0)
+        return _y_hat, masked_labels2
     return _y_hat
 
 

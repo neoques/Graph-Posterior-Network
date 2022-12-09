@@ -39,6 +39,24 @@ model:
   # change this to a get a different random model initialization (init_no > 0)
   init_no: 1
   
+  # model_name: GPN
+  # dim_hidden: 64
+  # dropout_prob: 0.5
+  # K: 10
+  # add_self_loops: true
+  # maf_layers: 0
+  # gaussian_layers: 0
+  # use_batched_flow: true
+  # loss_reduction: sum
+  # approximate_reg: true
+  # flow_weight_decay: 0.0
+  # pre_train_mode: flow
+  # alpha_evidence_scale: latent-new
+  # alpha_teleport: 0.1
+  # entropy_reg: 0.0001
+  # dim_latent: 16
+  # radial_layers: 10
+
   model_name: GPN
   dim_hidden: 64
   dropout_prob: 0.5
@@ -53,9 +71,17 @@ model:
   pre_train_mode: flow
   alpha_evidence_scale: latent-new
   alpha_teleport: 0.1
-  entropy_reg: 0.0001
+  dist_sigma: 5
   dim_latent: 16
   radial_layers: 10
+  activation_type: 'ReLU'
+  lipschitz_reg: 0.000
+  lipschitz_init: 100000.0
+  entropy_reg: 0.0001
+  dist_reg: 0.0000
+  orig_dist_reg: 0.0000
+  KNN_K: 5
+  dist_embedding_beta: 'preflow-l2'
 
 
 training:

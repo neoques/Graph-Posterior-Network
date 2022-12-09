@@ -39,7 +39,7 @@ class RunConfiguration(HalfFrozenObject):
     num_splits: int = attr.ib(default=None)
 
     # running experiment
-    log: bool = attr.ib(default=True) # flag for logging training progress and metrics
+    log: bool = attr.ib(default=False) # flag for logging training progress and metrics
     debug: bool = attr.ib(default=True) # flag for running code in a "DEBUG" mode
     ex_type: str = attr.ib(default='transductive', validator=lambda i, a, v: v in (
         'transductive', 'transductive_ood'))
@@ -98,6 +98,7 @@ class ModelConfiguration(HalfFrozenObject):
 
     # model name
     model_name: str = attr.ib(default=None, validator=lambda i, a, v: v is not None and len(v) > 0)
+    curr_dir: str = attr.ib(default=None)
     # randomness
     seed: int = attr.ib(default=None, validator=lambda i, a, v: v is not None and v > 0)
     init_no: int = attr.ib(default=None, validator=lambda i, a, v: v is not None and v > 0)
@@ -115,7 +116,7 @@ class ModelConfiguration(HalfFrozenObject):
     k_lipschitz: float = attr.ib(default=None)
 
     # for deeper networks
-    num_layers: int = attr.ib(default=None)
+    num_layers: int = attr.ib(default=5)
 
     # GAT
     heads_conv1: int = attr.ib(default=None)
@@ -129,6 +130,7 @@ class ModelConfiguration(HalfFrozenObject):
     add_self_loops: bool = attr.ib(default=None)
 
     # PostNet / NormalizingFlows
+    activation_type: str = attr.ib(default=None)
     radial_layers: int = attr.ib(default=None)
     ft_radial_layers: int = attr.ib(default=None)
     maf_layers: int = attr.ib(default=None)
@@ -137,13 +139,7 @@ class ModelConfiguration(HalfFrozenObject):
     ft_gaussian_layers: int = attr.ib(default=None)
     dim_latent: int = attr.ib(default=None)
     alpha_evidence_scale: Union[int, str] = attr.ib(default=None)
-    entropy_reg: float = attr.ib(default=None)
-    orig_dist_reg: float = attr.ib(default=None)
-    dist_reg: float = attr.ib(default=None)
-    normalize_dist_reg: bool = attr.ib(default=None)
-    dist_sigma: float = attr.ib(default=None)
-    dist_embedding_beta: bool = attr.ib(default=None)
-    KNN_K: int = attr.ib(default=None)
+    
     factor_flow_lr: float = attr.ib(default=None)
     flow_weight_decay: float = attr.ib(default=None)
     share_flow: bool = attr.ib(default=None)
@@ -155,7 +151,53 @@ class ModelConfiguration(HalfFrozenObject):
     gpn_loss_type: str = attr.ib(
         default=None
     )
+    save_tsne: bool = attr.ib(default=None)
+    
+    # Regularization terms
+    # dirichlet entropy reg
+    entropy_reg: float = attr.ib(default=None)
 
+    # For Isomap
+    stress_reg: float = attr.ib(default=None)
+    stress_use_graph: bool = attr.ib(default=None)
+    stress_metric: str = attr.ib(default=None)
+    stress_drop_orthog: bool = attr.ib(default=None)
+    stress_drop_last_N: int = attr.ib(default=None)
+    stress_knn_k: int = attr.ib(default=None)
+    stress_scaling: int = attr.ib(default=None)
+    stress_row_normalize: bool = attr.ib(default=None)
+    stress_sym_single_dists: bool = attr.ib(default=None)
+    stress_force_connected: str = attr.ib(default=None)
+
+    # For Decoded Regularization
+    decoder_reg: float = attr.ib(default=None)
+    
+    # For LDA loss
+    LDA_loss: float = attr.ib(default=None)
+    
+    # For negative log likelihood loss
+    nll_loss: float = attr.ib(default=None)
+    uce_loss: float = attr.ib(default=None)
+    mse_loss: float = attr.ib(default=None)
+    mae_loss: float = attr.ib(default=None)
+    fixed_point_loss: float = attr.ib(default=None)
+    # For all Distances
+    dist_perserving: bool = attr.ib(default=None)
+    dist_embedding_beta: str = attr.ib(default=None)
+
+    # raw graph distance reg
+    orig_dist_reg: float = attr.ib(default=None)
+
+    # KNN distance regularization
+    dist_reg: float = attr.ib(default=None)
+    dist_sigma: float = attr.ib(default=None)
+    KNN_K: int = attr.ib(default=None)
+    knn_mode: str = attr.ib(default=None)
+    
+    # MLP lipschitz regularization
+    lipschitz_reg: float = attr.ib(default=None)
+    lipschitz_init: float = attr.ib(default=None)
+    
     # Natural PostNets
     weight_evidence_transformation: str = attr.ib(default=None)
     weight_evidence_scale: float = attr.ib(default=None)

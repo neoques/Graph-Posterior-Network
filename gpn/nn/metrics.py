@@ -70,7 +70,7 @@ def brier_score(y_hat: Tensor, y: Tensor) -> Tensor:
         Tensor: Brier Score
     """
     batch_size = y_hat.size(0)
-    if batch_size <= 0:
+    if batch_size == 0:
         return torch.as_tensor(float('nan'))
     prob = y_hat.clone()
     indices = torch.arange(batch_size)
@@ -98,8 +98,9 @@ def confidence(y_hat: Prediction, y: Tensor, score_type: str = 'AUROC', uncertai
 
     if getattr(y_hat, key) is not None:
         scores = getattr(y_hat, key).cpu().detach().numpy()
-
         if len(scores) == 0:
+            # import pdb
+            # pdb.set_trace()
             return torch.as_tensor(float('nan'))
 
         return _area_under_the_curve(score_type, corrects, scores)

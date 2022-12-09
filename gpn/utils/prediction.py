@@ -8,6 +8,8 @@ from .object import HalfFrozenObject
 @attr.s(frozen=True)
 class Prediction(HalfFrozenObject):
     """object specifying possible model predictions"""
+    decoder_reg: torch.Tensor = attr.ib(default=None)
+
     # softmax prediction
     soft: torch.Tensor = attr.ib(default=None)
     log_soft: torch.Tensor = attr.ib(default=None)
@@ -32,6 +34,9 @@ class Prediction(HalfFrozenObject):
     hidden_features: torch.Tensor = attr.ib(default=None)
     lap_eig_dist: torch.Tensor = attr.ib(default=None)
     orig_dist_reg: torch.Tensor = attr.ib(default=None)
+    stress: torch.Tensor = attr.ib(default=None)
+    lipschitz_constant: torch.Tensor = attr.ib(default=None)
+    iso_embedding: torch.Tensor = attr.ib(default=None)
     
     # ensembles
     var_predicted: torch.Tensor = attr.ib(default=None)
