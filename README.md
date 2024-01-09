@@ -4,7 +4,7 @@ This repository presents the experiments of the paper:
 
 Improvements on Uncertainty Quantification for Node Classification via Distance-Based Regularization<br>
 Russell Alan Hart, Linlin Yu, Yifei Lou, Feng Chen <br>
-Conference on Neural Information Processing Systems (NeurIPS), 2020. 
+Conference on Neural Information Processing Systems (NeurIPS), 2023. 
 
 [paper] [video] coming soon
 
